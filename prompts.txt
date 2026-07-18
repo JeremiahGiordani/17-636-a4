@@ -98,3 +98,42 @@ Each run, do this:
 Work in focused increments — one meaningful chunk per run. Keep going until the
 entire test suite passes.
 
+================================================================
+STEP 2 (EXTENSION) -- STAGE: SPECIFY
+================================================================
+This is the SPECIFY stage for the EXTENSION step. The BASE system is complete:
+engine.py (a Spreadsheet formula engine), app.py (Flask API: GET /, GET /cells,
+POST /cells), a frontend, and tests/ (27 passing tests). Read SPEC.md, PLAN.md,
+engine.py, and app.py first to understand the base.
+
+The extension adds SPREADSHEET FUNCTIONS and RANGES to the formula engine. Write
+a specification to SPEC-ext.md at the repo root. Do NOT write code or tests yet
+-- only SPEC-ext.md.
+
+Scope of the extension:
+- Range references like A1:A5 (a rectangular block of cells), usable as function
+  arguments.
+- Aggregate functions over ranges and/or argument lists: SUM, AVG (average),
+  MIN, MAX, COUNT. E.g. =SUM(A1:A5), =AVG(A1:A3, B1), =MAX(A1:A10).
+- An IF function: IF(condition, value_if_true, value_if_false), with comparison
+  operators in conditions: > < >= <= = <> (e.g. =IF(A1>10, 1, 0)).
+- Functions may nest and combine with arithmetic (=SUM(A1:A3)*2,
+  =IF(SUM(A1:A2)>5, 100, 0)).
+- Backward compatible: the base system must keep working; all existing tests
+  must still pass. The base API (endpoints, request/response shapes) is unchanged.
+
+The spec must include:
+- One-paragraph overview.
+- Exact function semantics: what SUM/AVG/MIN/MAX/COUNT do over ranges; how empty
+  cells are treated by each (esp. AVG and COUNT); how comparisons evaluate (result
+  1/0); how IF selects a branch.
+- How ranges are parsed and expanded (A1:C3 = the rectangular block).
+- Error handling for the new features (bad argument; a range/arg that includes an
+  error cell).
+- A concrete ACCEPTANCE TEST LIST (numbered, input -> expected) for the new
+  features: each function over a range, empty-cell handling, each comparison
+  operator in IF, nested functions, and function-plus-arithmetic. These become
+  pytest tests in the plan stage.
+
+Keep it concise and unambiguous.
+
