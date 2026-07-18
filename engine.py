@@ -8,9 +8,14 @@ _CELL_RE = re.compile(r'^([A-Ja-j])(10|[1-9])$')
 
 # Token patterns for the formula lexer
 _TOKEN_RE = re.compile(
-    r'([A-Ja-j](?:10|[1-9]))'   # cell reference
-    r'|(\d+(?:\.\d*)?|\.\d+)'    # number
-    r'|([+\-*/()])'              # operator or paren
+    r'((?:SUM|AVG|MIN|MAX|COUNT|IF)\b)'  # function name
+    r'|([A-Ja-j](?:10|[1-9]))'           # cell reference
+    r'|(\d+(?:\.\d*)?|\.\d+)'            # number
+    r'|(>=|<=|<>|[><=])'                  # comparison operator
+    r'|([+\-*/()])'                       # operator or paren
+    r'|(:)'                               # colon (range separator)
+    r'|(,)'                               # comma (argument separator)
+    , re.IGNORECASE
 )
 
 
@@ -25,7 +30,7 @@ def _normalize(cell_id: str) -> str:
 def _tokenize(expr: str):
     """Tokenize a formula expression (without the leading '=').
     Returns list of (type, value) tuples.
-    Types: 'NUM', 'CELL', 'OP'
+    Types: 'NUM', 'CELL', 'OP', 'FUNC', 'CMP', 'COLON', 'COMMA'
     Raises ValueError on invalid tokens.
     """
     tokens = []
@@ -38,25 +43,35 @@ def _tokenize(expr: str):
         if not m:
             raise ValueError(f"unexpected character: {expr[pos]}")
         if m.group(1):
-            tokens.append(('CELL', _normalize(m.group(1))))
+            tokens.append(('FUNC', m.group(1).upper()))
         elif m.group(2):
-            tokens.append(('NUM', float(m.group(2))))
+            tokens.append(('CELL', _normalize(m.group(2))))
         elif m.group(3):
-            tokens.append(('OP', m.group(3)))
+            tokens.append(('NUM', float(m.group(3))))
+        elif m.group(4):
+            tokens.append(('CMP', m.group(4)))
+        elif m.group(5):
+            tokens.append(('OP', m.group(5)))
+        elif m.group(6):
+            tokens.append(('COLON', ':'))
+        elif m.group(7):
+            tokens.append(('COMMA', ','))
         pos = m.end()
     return tokens
 
 
 class _Parser:
-    """Recursive-descent parser for arithmetic expressions with cell refs.
+    """Recursive-descent parser for formulas with functions, ranges, comparisons.
 
     Grammar:
-        expr   -> term (('+' | '-') term)*
-        term   -> unary (('*' | '/') unary)*
-        unary  -> '-' unary | atom
-        atom   -> NUMBER | CELL_REF | '(' expr ')'
-
-    Returns an AST as nested tuples.
+        expr     -> cmp_expr
+        cmp_expr -> add_expr (CMP add_expr)?
+        add_expr -> term (('+' | '-') term)*
+        term     -> unary (('*' | '/') unary)*
+        unary    -> '-' unary | atom
+        atom     -> NUM | CELL | FUNC '(' arglist ')' | '(' expr ')'
+        arglist  -> arg (',' arg)*
+        arg      -> CELL ':' CELL | expr
     """
 
     def __init__(self, tokens):
@@ -80,9 +95,20 @@ class _Parser:
         return result
 
     def _expr(self):
+        return self._cmp_expr()
+
+    def _cmp_expr(self):
+        left = self._add_expr()
+        if self._peek() and self._peek()[0] == 'CMP':
+            op = self._consume()[1]
+            right = self._add_expr()
+            left = ('cmp', op, left, right)
+        return left
+
+    def _add_expr(self):
         left = self._term()
-        while self._peek() and self._peek() == ('OP', '+') or \
-              self._peek() and self._peek() == ('OP', '-'):
+        while self._peek() and self._peek()[0] == 'OP' and \
+              self._peek()[1] in ('+', '-'):
             op = self._consume()[1]
             right = self._term()
             left = ('binop', op, left, right)
@@ -90,8 +116,8 @@ class _Parser:
 
     def _term(self):
         left = self._unary()
-        while self._peek() and self._peek() == ('OP', '*') or \
-              self._peek() and self._peek() == ('OP', '/'):
+        while self._peek() and self._peek()[0] == 'OP' and \
+              self._peek()[1] in ('*', '/'):
             op = self._consume()[1]
             right = self._unary()
             left = ('binop', op, left, right)
@@ -114,6 +140,8 @@ class _Parser:
         if tok[0] == 'CELL':
             self._consume()
             return ('cell', tok[1])
+        if tok[0] == 'FUNC':
+            return self._func_call()
         if tok == ('OP', '('):
             self._consume()
             node = self._expr()
@@ -123,6 +151,49 @@ class _Parser:
             return node
         raise ValueError(f"unexpected token: {tok}")
 
+    def _func_call(self):
+        name = self._consume()[1]  # FUNC token
+        if not self._peek() or self._peek() != ('OP', '('):
+            raise ValueError(f"expected '(' after function name {name}")
+        self._consume()  # consume '('
+
+        # Check for empty arg list
+        if self._peek() and self._peek() == ('OP', ')'):
+            self._consume()
+            raise ValueError(f"{name}() requires at least one argument")
+
+        args = self._arglist()
+
+        if not self._peek() or self._peek() != ('OP', ')'):
+            raise ValueError("missing closing parenthesis in function call")
+        self._consume()  # consume ')'
+
+        # Validate arg count for IF
+        if name == 'IF' and len(args) != 3:
+            raise ValueError("IF requires exactly 3 arguments")
+
+        return ('func', name, args)
+
+    def _arglist(self):
+        args = [self._arg()]
+        while self._peek() and self._peek()[0] == 'COMMA':
+            self._consume()  # consume ','
+            args.append(self._arg())
+        return args
+
+    def _arg(self):
+        # Check for range: CELL ':' CELL
+        if self._peek() and self._peek()[0] == 'CELL' and \
+           self.pos + 1 < len(self.tokens) and \
+           self.tokens[self.pos + 1][0] == 'COLON':
+            start = self._consume()[1]  # CELL
+            self._consume()  # COLON
+            if not self._peek() or self._peek()[0] != 'CELL':
+                raise ValueError("expected cell reference after ':'")
+            end = self._consume()[1]  # CELL
+            return ('range', start, end)
+        return self._expr()
+
 
 def _parse_formula(expr: str):
     """Parse a formula expression string (without '=') into an AST."""
@@ -130,6 +201,22 @@ def _parse_formula(expr: str):
     if not tokens:
         raise ValueError("empty expression")
     return _Parser(tokens).parse()
+
+
+def _expand_range(start_cell, end_cell):
+    """Expand a range like A1:C3 into a list of cell IDs."""
+    col1, row1 = start_cell[0], int(start_cell[1:])
+    col2, row2 = end_cell[0], int(end_cell[1:])
+    # Normalize: ensure col1 <= col2 and row1 <= row2
+    if col1 > col2:
+        col1, col2 = col2, col1
+    if row1 > row2:
+        row1, row2 = row2, row1
+    cells = []
+    for c in range(ord(col1), ord(col2) + 1):
+        for r in range(row1, row2 + 1):
+            cells.append(f"{chr(c)}{r}")
+    return cells
 
 
 def _collect_refs(ast):
@@ -144,23 +231,32 @@ def _collect_refs(ast):
         refs |= _collect_refs(ast[3])
     elif ast[0] == 'unary':
         refs |= _collect_refs(ast[2])
+    elif ast[0] == 'func':
+        for arg in ast[2]:
+            refs |= _collect_refs(arg)
+    elif ast[0] == 'range':
+        for cell_id in _expand_range(ast[1], ast[2]):
+            refs.add(cell_id)
+    elif ast[0] == 'cmp':
+        refs |= _collect_refs(ast[2])
+        refs |= _collect_refs(ast[3])
     return refs
 
 
-def _eval_ast(ast, cell_values):
-    """Evaluate an AST given a dict of cell_id -> numeric value.
-    Raises ZeroDivisionError or ValueError on errors.
-    cell_values maps cell_id to its value (float) or raises if error.
+def _eval_ast(ast, cell_values, is_empty=None):
+    """Evaluate an AST given cell value/emptiness callbacks.
+    cell_values: function(cell_id) -> float, raises on error cells.
+    is_empty: function(cell_id) -> bool, checks if cell is empty.
     """
     if ast[0] == 'num':
         return ast[1]
     elif ast[0] == 'cell':
         return cell_values(ast[1])
     elif ast[0] == 'unary':
-        return -_eval_ast(ast[2], cell_values)
+        return -_eval_ast(ast[2], cell_values, is_empty)
     elif ast[0] == 'binop':
-        left = _eval_ast(ast[2], cell_values)
-        right = _eval_ast(ast[3], cell_values)
+        left = _eval_ast(ast[2], cell_values, is_empty)
+        right = _eval_ast(ast[3], cell_values, is_empty)
         op = ast[1]
         if op == '+':
             return left + right
@@ -172,7 +268,55 @@ def _eval_ast(ast, cell_values):
             if right == 0:
                 raise ZeroDivisionError("division by zero")
             return left / right
+    elif ast[0] == 'cmp':
+        left = _eval_ast(ast[2], cell_values, is_empty)
+        right = _eval_ast(ast[3], cell_values, is_empty)
+        op = ast[1]
+        ops = {'>': left > right, '<': left < right,
+               '>=': left >= right, '<=': left <= right,
+               '=': left == right, '<>': left != right}
+        return 1 if ops[op] else 0
+    elif ast[0] == 'func':
+        return _eval_func(ast[1], ast[2], cell_values, is_empty)
     raise ValueError("unknown AST node")
+
+
+def _eval_func(name, arg_asts, cell_values, is_empty):
+    """Evaluate a function call."""
+    if name == 'IF':
+        # Lazy evaluation: only evaluate the selected branch
+        condition = _eval_ast(arg_asts[0], cell_values, is_empty)
+        if condition != 0:
+            return _eval_ast(arg_asts[1], cell_values, is_empty)
+        else:
+            return _eval_ast(arg_asts[2], cell_values, is_empty)
+
+    # Aggregate functions: collect all values with empty flags
+    values = []  # list of (value, is_empty_flag)
+    for arg_ast in arg_asts:
+        if arg_ast[0] == 'range':
+            for cell_id in _expand_range(arg_ast[1], arg_ast[2]):
+                val = cell_values(cell_id)  # raises on error
+                empty = is_empty(cell_id) if is_empty else False
+                values.append((val, empty))
+        else:
+            val = _eval_ast(arg_ast, cell_values, is_empty)
+            values.append((val, False))  # non-range args are never empty
+
+    if name == 'SUM':
+        return sum(v for v, _ in values)
+    elif name == 'AVG':
+        non_empty = [v for v, e in values if not e]
+        if not non_empty:
+            raise ValueError("no values to average")
+        return sum(non_empty) / len(non_empty)
+    elif name == 'MIN':
+        return min(v for v, _ in values)
+    elif name == 'MAX':
+        return max(v for v, _ in values)
+    elif name == 'COUNT':
+        return sum(1 for _, e in values if not e)
+    raise ValueError(f"unknown function: {name}")
 
 
 class Spreadsheet:
@@ -364,8 +508,11 @@ class Spreadsheet:
                 raise ValueError(f"reference to error cell {ref_cell}")
             return self._values.get(ref_cell, 0)
 
+        def check_empty(cell_id):
+            return cell_id not in self._raw or self._raw.get(cell_id) == ''
+
         try:
-            value = _eval_ast(ast, get_value)
+            value = _eval_ast(ast, get_value, check_empty)
             self._values[cell_id] = value
             self._errors.pop(cell_id, None)
         except ZeroDivisionError:
