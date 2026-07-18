@@ -1,0 +1,34 @@
+body {
+    font-family: sans-serif;
+    margin: 20px;
+}
+
+table#grid {
+    border-collapse: collapse;
+}
+
+table#grid th, table#grid td {
+    border: 1px solid #ccc;
+    width: 80px;
+    height: 28px;
+    text-align: center;
+    padding: 2px 4px;
+}
+
+table#grid th {
+    background: #f0f0f0;
+    font-weight: bold;
+}
+
+table#grid input {
+    width: 100%;
+    height: 100%;
+    border: none;
+    text-align: center;
+    box-sizing: border-box;
+    font-size: 14px;
+}
+
+td.error {
+    background: #ffe0e0;
+}
