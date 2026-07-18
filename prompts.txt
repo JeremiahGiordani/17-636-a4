@@ -137,3 +137,25 @@ The spec must include:
 
 Keep it concise and unambiguous.
 
+================================================================
+STEP 2 (EXTENSION) -- STAGE: PLAN
+================================================================
+This is the PLAN stage for the EXTENSION. Read SPEC-ext.md, SPEC.md, PLAN.md, and
+engine.py.
+
+Do two things:
+(1) Write PLAN-ext.md at the repo root: how the formula engine will be extended
+(tokenizer/parser changes for ranges like A1:A5, function-call syntax like
+SUM(...), and comparison operators; new evaluation logic for the aggregate
+functions and IF), which files change (engine.py mainly; app.py likely
+unchanged), and an ordered task breakdown. Note the definition of done: the full
+pytest suite (existing base tests + new extension tests) passes, with no tests
+weakened.
+(2) Write the pytest tests for the extension acceptance cases from SPEC-ext.md in
+a NEW file tests/test_functions.py, using the existing Spreadsheet interface
+(set_cell / get_all_cells). Do NOT modify existing test files, and do NOT
+implement engine changes yet -- only PLAN-ext.md and tests/test_functions.py. It
+is expected these new tests fail until the build stage.
+
+Keep PLAN-ext.md concise.
+
