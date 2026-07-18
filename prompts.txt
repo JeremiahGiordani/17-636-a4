@@ -1,0 +1,8 @@
+================================================================
+prompts.txt -- every prompt/command given to the coding agent
+================================================================
+This is the running log of all prompts used to build this project, in order,
+across both steps (base system + extension) and all stages (specify, plan,
+build). The build-stage prompt is also stored as build_prompt.md and is what
+loop.sh feeds to the agent each iteration.
+
