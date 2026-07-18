@@ -6,3 +6,39 @@ across both steps (base system + extension) and all stages (specify, plan,
 build). The build-stage prompt is also stored as build_prompt.md and is what
 loop.sh feeds to the agent each iteration.
 
+================================================================
+STEP 1 (BASE SYSTEM) -- STAGE: SPECIFY
+================================================================
+We are building a small web app for a course assignment: a MINIMAL SPREADSHEET
+(a stripped-down Google Sheets). A grid of cells; each cell holds either a
+literal value or a formula starting with "=" (e.g. =A1+B2*3). Formulas can
+reference other cells (like A1). Editing a cell recalculates all cells that
+depend on it. Formula evaluation happens on a Python/Flask BACKEND (this is the
+interactive backend); the frontend is a simple HTML/CSS/JS grid.
+
+This is the SPECIFY stage. Write a clear, concise specification to a file named
+SPEC.md at the repo root. Do NOT write any application code yet -- only SPEC.md.
+
+The spec must cover:
+- A one-paragraph overview.
+- IN SCOPE for the BASE system: an N x N grid (say 10x10), literal numeric
+  values, formulas using + - * / and parentheses, cell references like A1, and
+  automatic recalculation of dependents when a cell changes. The Flask backend
+  evaluates formulas.
+- OUT OF SCOPE for the base (explicitly deferred to a later EXTENSION step):
+  functions like SUM/AVG/IF, range references like A1:A5, saving/loading sheets
+  to a database, styling/formatting, and multiple sheets.
+- Tech stack: Python 3 + Flask backend, vanilla HTML/CSS/JS frontend, pytest for
+  tests. (SQLite only later, for the extension.)
+- The backend API: endpoint(s), request and response JSON shapes.
+- Formula/edge-case behavior: a reference to an empty cell counts as 0; division
+  by zero yields an error value; an invalid/non-numeric formula yields an error;
+  circular references are detected and reported as an error instead of looping.
+- A concrete ACCEPTANCE TEST LIST: a numbered list of specific, testable cases
+  written as (input cells -> expected computed output), covering arithmetic and
+  precedence, parentheses, cell references, recalculation after an edit,
+  empty-cell references, division by zero, and circular-reference detection.
+  These cases will become pytest tests in a later stage.
+
+Keep it unambiguous and not too long. Write only SPEC.md.
+
