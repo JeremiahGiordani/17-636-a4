@@ -42,3 +42,29 @@ The spec must cover:
 
 Keep it unambiguous and not too long. Write only SPEC.md.
 
+================================================================
+STEP 1 (BASE SYSTEM) -- STAGE: PLAN
+================================================================
+This is the PLAN stage for the BASE system. Read SPEC.md, then do two things.
+
+(1) Write PLAN.md at the repo root, concise, containing:
+- The file/directory layout: a Flask app (app.py), a formula-engine module
+  (engine.py), templates/index.html, static/ for CSS+JS, and tests/.
+- The shared interfaces both the tests and the app code will use: the formula
+  engine's public function(s) with exact signatures and return shapes, and the
+  Flask endpoints (GET /, GET /cells, POST /cells) matching SPEC.md.
+- An ordered task breakdown for the build stage.
+- A note that the pytest suite in tests/ is the DEFINITION OF DONE: the build
+  stage must make the code pass it without weakening the tests.
+
+(2) Write the pytest TEST SUITE encoding SPEC.md's 16 acceptance tests, under
+tests/ (e.g. tests/test_engine.py for the formula engine and tests/test_api.py
+for the Flask endpoints via Flask's test client), using the interfaces you
+defined in PLAN.md. Add a conftest.py or pytest config so tests import the
+app/engine modules from the repo root.
+
+Do NOT implement any application logic yet -- no engine evaluation code, no
+Flask routes, no frontend. Only PLAN.md, the test files, and test-support config.
+It is expected and fine that the tests currently fail because the app code does
+not exist yet. Keep PLAN.md short and clear.
+
